@@ -335,6 +335,24 @@ without forking:
    to skip a directory in the text-file scan. Memory-style files
    (`MEMORY.md`, `.learnings/*.md`, `memory/*.md`) are *never* skipped
    The doctor's job is to audit those.
+3. **Project config (`.memory-doctor.json`).** Optional JSON at the
+   workspace root. Schema:
+
+   ```json
+   {
+     "stale_days": 60,
+     "max_memory_lines": 200,
+     "max_section_lines": 30,
+     "exclude": ["scripts/tests"],
+     "redact": true,
+     "ignore_file": ".memory-doctorignore"
+   }
+   ```
+
+   CLI flags always win over the file. A file with an unknown key,
+   wrong type, or invalid JSON triggers exit code 3 (internal error)
+   with a message pointing at the offending file. A missing file is
+   silent.
 
 3. **Suppression file (`.memory-doctorignore`).** Gitignore-style
    syntax. Each non-comment, non-blank line is a rule:

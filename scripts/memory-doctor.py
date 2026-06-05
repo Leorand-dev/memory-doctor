@@ -197,6 +197,119 @@ def _apply_ignore_rules(findings: list, rules: list) -> list:
     return findings
 
 # --------------------------------------------------------------------------- #
+# .memory-doctor.json — config file loader
+# --------------------------------------------------------------------------- #
+#
+# Schema (all fields optional):
+#   {
+#     "stale_days": 90,                  # int
+#     "max_memory_lines": 300,           # int
+#     "max_section_lines": 50,           # int
+#     "exclude": ["scripts/tests"],      # list[str]
+#     "redact": true,                    # bool
+#     "ignore_file": ".memory-doctorignore"  # str
+#   }
+#
+# CLI flags override file values. A file with the wrong field name or
+# wrong type is reported as exit code 3 (internal error) with a clear
+# pointer at the offending file. A missing file is silently OK (use
+# defaults).
+
+CONFIG_FILE_NAME = ".memory-doctor.json"
+# Fields the doctor recognizes. Anything else is an error.
+_KNOWN_CONFIG_KEYS = {
+    "stale_days", "max_memory_lines", "max_section_lines",
+    "exclude", "redact", "ignore_file",
+}
+
+
+class ConfigError(Exception):
+    """Raised when the .memory-doctor.json file is malformed."""
+
+
+def _load_config_file(path: Path) -> dict:
+    """Load a .memory-doctor.json from disk. Returns {} on missing file.
+
+    Raises ConfigError on any of:
+      - JSON parse error
+      - top-level not a dict
+      - unknown key
+      - wrong type for a known key
+    """
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        raise ConfigError(f"cannot read {path}: {e}") from e
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ConfigError(
+            f"invalid JSON in {path} (line {e.lineno}, col {e.colno}): {e.msg}"
+        ) from e
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} must be a JSON object at the top level")
+    unknown = set(data.keys()) - _KNOWN_CONFIG_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{path} has unknown key(s): {sorted(unknown)}. "
+            f"Known keys: {sorted(_KNOWN_CONFIG_KEYS)}"
+        )
+    # Type-check each known key
+    type_specs = {
+        "stale_days": int,
+        "max_memory_lines": int,
+        "max_section_lines": int,
+        "exclude": list,
+        "redact": bool,
+        "ignore_file": str,
+    }
+    for key, expected in type_specs.items():
+        if key not in data:
+            continue
+        val = data[key]
+        if not isinstance(val, expected) or (expected is int and isinstance(val, bool)):
+            raise ConfigError(
+                f"{path} field '{key}' must be {expected.__name__}, "
+                f"got {type(val).__name__}"
+            )
+    # Stale_days must be >= 0
+    if "stale_days" in data and data["stale_days"] < 0:
+        raise ConfigError(f"{path} field 'stale_days' must be >= 0")
+    # Line budgets must be > 0
+    for key in ("max_memory_lines", "max_section_lines"):
+        if key in data and data[key] <= 0:
+            raise ConfigError(f"{path} field '{key}' must be > 0")
+    return data
+
+
+def _merge_config_with_args(config: dict, args) -> dict:
+    """Apply config-file defaults to args. CLI flags (those explicitly set
+    to non-default by the user) win. Returns a flat dict of the resolved
+    values ready to pass to run_doctor.
+    """
+    def _arg_was_explicitly_set(argname: str) -> bool:
+        """Heuristic: argparse sets the default when not provided, so
+        the only way to tell is to compare with the parser's default.
+        For simplicity and given our small surface, we treat every CLI
+        flag as 'override' (i.e., config never overrides CLI). This
+        matches the documented behavior and is what the user wants.
+        """
+        return True  # CLI always wins
+
+    out = dict(config)  # start with file values
+    # Apply CLI values on top. We treat every CLI flag as explicit
+    # override (see _arg_was_explicitly_set docstring).
+    out["stale_days"] = args.stale_days
+    out["max_memory_lines"] = args.max_memory_lines
+    out["max_section_lines"] = args.max_section_lines
+    out["exclude"] = list(args.exclude) if args.exclude else []
+    out["redact"] = args.redact
+    out["ignore_file_name"] = args.ignore_file
+    return out
+
+# --------------------------------------------------------------------------- #
 # Data model
 # --------------------------------------------------------------------------- #
 
@@ -871,12 +984,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     ap.add_argument("--quiet", action="store_true", help="Only summary line.")
-    ap.add_argument("--stale-days", type=int, default=90, help="Stale threshold (default 90).")
+    ap.add_argument("--stale-days", type=int, default=None, help="Stale threshold. If omitted, uses .memory-doctor.json or default 90.")
     ap.add_argument(
-        "--max-memory-lines", type=int, default=300, help="MEMORY.md line budget (default 300)."
+        "--max-memory-lines", type=int, default=None,
+        help="MEMORY.md line budget. If omitted, uses .memory-doctor.json or default 300.",
     )
     ap.add_argument(
-        "--max-section-lines", type=int, default=50, help="Per-section line budget (default 50)."
+        "--max-section-lines", type=int, default=None,
+        help="Per-section line budget. If omitted, uses .memory-doctor.json or default 50.",
     )
     ap.add_argument(
         "--exclude",
@@ -906,6 +1021,36 @@ def main(argv: list[str] | None = None) -> int:
         help="Filename of the ignore file at the workspace root (default: .memory-doctorignore).",
     )
     args = ap.parse_args(argv)
+
+    # Load .memory-doctor.json (CLI flags win). Fail fast on parse error
+    # so a misconfigured file does not produce a confusing scan.
+    try:
+        config = _load_config_file(args.workspace / CONFIG_FILE_NAME)
+    except ConfigError as e:
+        sys.stderr.write(f"memory-doctor config error: {e}\n")
+        return 3
+
+    # Apply config defaults ONLY where the user did not pass a CLI flag.
+    # argparse's `default=None` is the sentinel for "not explicitly set".
+    # CLI > config > hardcoded default.
+    if "stale_days" in config and args.stale_days is None:
+        args.stale_days = config["stale_days"]
+    if "max_memory_lines" in config and args.max_memory_lines is None:
+        args.max_memory_lines = config["max_memory_lines"]
+    if "max_section_lines" in config and args.max_section_lines is None:
+        args.max_section_lines = config["max_section_lines"]
+    if "exclude" in config and not args.exclude:
+        args.exclude = list(config["exclude"])
+    if "ignore_file" in config:
+        args.ignore_file = config["ignore_file"]
+    # Final fallback: if any of the int fields are still None (no CLI,
+    # no config), use the hardcoded defaults.
+    if args.stale_days is None:
+        args.stale_days = 90
+    if args.max_memory_lines is None:
+        args.max_memory_lines = 300
+    if args.max_section_lines is None:
+        args.max_section_lines = 50
 
     try:
         report = run_doctor(

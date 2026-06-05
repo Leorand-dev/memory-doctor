@@ -673,5 +673,117 @@ class TestMemoryDoctor(unittest.TestCase):
             shutil.rmtree(secret_ws, ignore_errors=True)
 
 
+    # --- .memory-doctor.json config file ---------------------------------
+
+    def test_config_file_missing_is_noop(self) -> None:
+        """No .memory-doctor.json present → defaults are used."""
+        cp = _run(["--scan", "--json"], self.ws)
+        # Should not fail; just defaults.
+        self.assertIn(cp.returncode, (0, 1))
+
+    def test_config_file_loaded(self) -> None:
+        """A valid config file is loaded and overrides defaults."""
+        ws = Path(tempfile.mkdtemp())
+        try:
+            (ws / ".memory-doctor.json").write_text(
+                '{"stale_days": 99999}\n', encoding="utf-8"
+            )
+            mkdir_p = (ws / ".learnings")
+            mkdir_p.mkdir(parents=True)
+            (ws / ".learnings" / "OLD.md").write_text(
+                "## [LRN-20200101-001] bug\n"
+                "**Logged**: 2020-01-01T00:00:00Z\n"
+                "**Last-Seen**: 2020-01-01\n"
+                "Body.\n",
+                encoding="utf-8",
+            )
+            cp = _run(["--scan", "--json"], ws)
+            data = json.loads(cp.stdout)
+            codes = {f["code"] for f in data["findings"]}
+            # stale_days=99999 means 2020-01-01 is NOT stale
+            self.assertNotIn("STALE-ITEM", codes)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_config_malformed_json_exits_3(self) -> None:
+        """Malformed JSON in config file → exit 3 (internal error)."""
+        ws = Path(tempfile.mkdtemp())
+        try:
+            (ws / ".memory-doctor.json").write_text(
+                '{ "stale_days": 90,\n',  # unterminated
+                encoding="utf-8",
+            )
+            cp = _run(["--scan"], ws)
+            self.assertEqual(cp.returncode, 3, "malformed JSON must exit 3")
+            self.assertIn("config error", cp.stderr.lower())
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_config_unknown_key_exits_3(self) -> None:
+        """Unknown top-level key → exit 3 with clear message."""
+        ws = Path(tempfile.mkdtemp())
+        try:
+            (ws / ".memory-doctor.json").write_text(
+                '{"bogus_field": 1}\n', encoding="utf-8"
+            )
+            cp = _run(["--scan"], ws)
+            self.assertEqual(cp.returncode, 3)
+            self.assertIn("unknown key", cp.stderr.lower())
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_config_wrong_type_exits_3(self) -> None:
+        """Wrong type for a known key → exit 3."""
+        ws = Path(tempfile.mkdtemp())
+        try:
+            (ws / ".memory-doctor.json").write_text(
+                '{"stale_days": "ninety"}\n', encoding="utf-8"
+            )
+            cp = _run(["--scan"], ws)
+            self.assertEqual(cp.returncode, 3)
+            self.assertIn("must be int", cp.stderr)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_config_cli_flag_overrides(self) -> None:
+        """A CLI flag explicitly set wins over the config file value."""
+        ws = Path(tempfile.mkdtemp())
+        try:
+            (ws / ".memory-doctor.json").write_text(
+                '{"stale_days": 0}\n', encoding="utf-8"
+            )
+            (ws / ".learnings").mkdir()
+            (ws / ".learnings" / "OLD.md").write_text(
+                "## [LRN-20200101-001] bug\n"
+                "**Logged**: 2020-01-01T00:00:00Z\n"
+                "**Last-Seen**: 2020-01-01\n"
+                "Body.\n",
+                encoding="utf-8",
+            )
+            # With config stale_days=0, STALE-ITEM fires.
+            cp = _run(["--scan", "--json"], ws)
+            data = json.loads(cp.stdout)
+            self.assertIn(
+                "STALE-ITEM",
+                {f["code"] for f in data["findings"]},
+                "config=0 should fire STALE-ITEM",
+            )
+            # With CLI --stale-days 99999, it should NOT fire.
+            cp = _run(["--scan", "--json", "--stale-days", "99999"], ws)
+            data = json.loads(cp.stdout)
+            self.assertNotIn(
+                "STALE-ITEM",
+                {f["code"] for f in data["findings"]},
+                "CLI --stale-days 99999 must override config stale_days=0",
+            )
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
