@@ -1,0 +1,66 @@
+# GitHub Action: leo-afk-sudo/memory-doctor@v1
+# Runs the memory-doctor Python health check on the workspace and
+# maps the exit code to a job status. Designed to drop into any
+# Python project with no setup.
+name: memory-doctor
+description: "Run the memory-doctor health check (secrets, staleness, duplicates, budget, ontology) on your agent's long-term memory files."
+
+inputs:
+  workspace:
+    description: "Workspace directory to scan. Use '.' for the repo root."
+    required: false
+    default: "."
+  fail-on:
+    description: "Minimum severity that fails the job. One of: info, low, medium, high, critical. Default: medium."
+    required: false
+    default: "medium"
+  redact:
+    description: "Redact matched secret substrings in output. Strongly recommended to keep ON."
+    required: false
+    default: "true"
+  exclude:
+    description: "Comma-separated list of relative directories to skip in the text-file scan (repeatable). Test fixtures live here."
+    required: false
+    default: ""
+  args:
+    description: "Extra arguments to forward to memory-doctor.py verbatim. Use for anything not exposed above (e.g. --ignore-file)."
+    required: false
+    default: ""
+
+outputs:
+  worst:
+    description: "Highest severity found (info, low, medium, high, critical) — or 'none' if the workspace is clean."
+  findings:
+    description: "Total number of unsuppressed findings."
+  suppressed:
+    description: "Number of findings that were suppressed via .memory-doctorignore."
+  exit-code:
+    description: "Raw exit code from memory-doctor (0 clean, 1 findings, 2 secret, 3 internal, 4 clean-with-suppressions)."
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Run memory-doctor
+      id: doctor
+      shell: bash
+      env:
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_REDACT: ${{ inputs.redact }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+        INPUT_ARGS: ${{ inputs.args }}
+      run: |
+        bash "$GITHUB_ACTION_PATH/entrypoint.sh" \
+          "${{ inputs.workspace }}" \
+          "${{ inputs.fail-on }}" \
+          "${{ inputs.redact }}" \
+          "${{ inputs.exclude }}" \
+          "${{ inputs.args }}"
+
+branding:
+  icon: "check-circle"
+  color: "orange"

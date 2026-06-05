@@ -59,6 +59,23 @@ python3 scripts/tests/test_memory_doctor.py
 # OK
 ```
 
+## CI / GitHub Actions
+
+The project ships an official GitHub Action in `action/`. Drop this
+into any project with a Python workspace:
+
+```yaml
+- uses: leo-afk-sudo/memory-doctor@v1
+  with:
+    workspace: .
+    fail-on: medium
+    redact: "true"
+    exclude: scripts/tests
+```
+
+See [`action/README.md`](action/README.md) for inputs, outputs, and
+the exit-code-to-job-status map.
+
 ## Design principles
 
 1. **Sensor, not actuator.** The doctor reports; the user decides.

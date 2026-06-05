@@ -1,0 +1,64 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-doctor:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run tests
+        run: python3 scripts/tests/test_memory_doctor.py
+
+  test-action:
+    name: Exercise the GitHub Action against a seeded workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test action on a clean seeded workspace (should pass)
+        uses: ./
+        with:
+          workspace: ./tests/fixtures/clean-workspace
+          fail-on: medium
+          redact: "true"
+          exclude: scripts/tests
+        # The clean fixture has no findings, so this should be exit 0.
+      - name: Seed a real-shape secret in the leaky workspace
+        # Build the token at runtime so no literal token string is
+        # checked into the repo. The string IS sensitive once written,
+        # but the .gitignore in the fixture keeps it out of git.
+        run: |
+          python3 -c "
+          open('tests/fixtures/leaky-workspace/leaky.md', 'w').write(
+              'leak: ghp_' + 'a' * 36 + ' here\n'
+          )
+          "
+      - name: Test action on a workspace with secrets (should fail)
+        id: leaky
+        uses: ./
+        with:
+          workspace: ./tests/fixtures/leaky-workspace
+          fail-on: medium
+          redact: "true"
+          exclude: scripts/tests
+        # The leaky fixture has a real-shape secret; the action's
+        # entrypoint should map exit 2 to a job failure.
+        # We use `continue-on-error: true` because we EXPECT this to
+        # fail, and we assert that it did.
+        continue-on-error: true
+      - name: Clean up the seeded secret
+        if: always()
+        run: rm -f tests/fixtures/leaky-workspace/leaky.md
+      - name: Confirm the action failed on the leaky workspace
+        if: steps.leaky.outcome != 'failure'
+        run: |
+          echo "::error::Expected the action to fail on the leaky workspace"
+          exit 1
