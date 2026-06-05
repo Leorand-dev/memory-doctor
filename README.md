@@ -12,6 +12,11 @@ $ python3 scripts/memory-doctor.py --scan --quiet
 ⚠️  3 finding(s), worst=critical
 ```
 
+By default, secret substrings in the output are masked as
+`<REDACTED:CODE>` so a real token in the report can't be re-leaked
+when you paste the output. Use `--no-redact` to reveal the full
+value (only when the output stays in a trusted channel).
+
 ## What it catches
 
 | Code | Severity | Example |
