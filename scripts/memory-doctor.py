@@ -371,7 +371,30 @@ def _check_ontology_dangling(workspace: Path) -> tuple[list[Finding], set[str], 
 # Check C4 — SECRET-LEAK
 # --------------------------------------------------------------------------- #
 
-def _check_secrets(workspace: Path, files: list[Path]) -> list[Finding]:
+def _redact_line(line: str, secret_rx: re.Pattern, code: str) -> str:
+    """Replace the matched secret-shaped substring with a redaction marker.
+
+    Keeps the line shape (leading context, trailing context) so the operator
+    can still locate the leak in the file, but the secret value itself is
+    replaced with `<REDACTED:CODE>`. The first 80 chars of the result are
+    what the doctor will print.
+    """
+    redacted = secret_rx.sub(f"<REDACTED:{code}>", line)
+    return redacted
+
+
+def _check_secrets(
+    workspace: Path,
+    files: list[Path],
+    redact: bool = True,
+) -> list[Finding]:
+    """Scan every text file for known secret-shaped patterns.
+
+    When `redact` is True (default), the secret substring in the printed
+    message is replaced with `<REDACTED:CODE>`. Set `redact=False` only
+    when the operator needs the full value (e.g. rotating a token via a
+    local script in a trusted environment).
+    """
     out: list[Finding] = []
     compiled = [(code, re.compile(pat), desc) for code, pat, desc in SECRET_PATTERNS]
     for f in files:
@@ -382,13 +405,17 @@ def _check_secrets(workspace: Path, files: list[Path]) -> list[Finding]:
         for ln, line in _iter_lines(text):
             for code, rx, desc in compiled:
                 if rx.search(line):
+                    if redact:
+                        shown = _redact_line(line.strip()[:80], rx, code)
+                    else:
+                        shown = line.strip()[:80]
                     out.append(
                         Finding(
                             code=code,
                             severity="critical",
                             path=_rel(f, workspace),
                             line=ln,
-                            message=f"{desc} detected: {line.strip()[:80]!r}",
+                            message=f"{desc} detected: {shown!r}",
                             suggestion="Rotate the credential immediately. Do NOT commit. Remove the line and replace with a reference (e.g. 'see ~/.config/...').",
                             fixable=False,  # NEVER auto-fix
                         )
@@ -599,6 +626,7 @@ def run_doctor(
     max_memory_lines: int = 300,
     max_section_lines: int = 50,
     exclude: Iterable[str] = (),
+    redact: bool = True,
 ) -> Report:
     workspace = workspace.resolve()
     report = Report(workspace=str(workspace), generated_at=_now_iso())
@@ -617,7 +645,7 @@ def run_doctor(
         report.add(f)
     for f in _check_duplicates(workspace, memory_files):
         report.add(f)
-    for f in _check_secrets(workspace, text_files):
+    for f in _check_secrets(workspace, text_files, redact=redact):
         report.add(f)
     ontology_findings, _, _ = _check_ontology_dangling(workspace)
     for f in ontology_findings:
@@ -713,6 +741,20 @@ def main(argv: list[str] | None = None) -> int:
         metavar="RELATIVE_DIR",
         help="Skip a directory (relative to workspace) when scanning. Repeatable.",
     )
+    redact_group = ap.add_mutually_exclusive_group()
+    redact_group.add_argument(
+        "--redact",
+        dest="redact",
+        action="store_true",
+        default=True,
+        help="Redact matched secret substrings in output (default).",
+    )
+    redact_group.add_argument(
+        "--no-redact",
+        dest="redact",
+        action="store_false",
+        help="Show the full offending line (DANGEROUS — may re-leak the secret).",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -722,6 +764,7 @@ def main(argv: list[str] | None = None) -> int:
             max_memory_lines=args.max_memory_lines,
             max_section_lines=args.max_section_lines,
             exclude=args.exclude,
+            redact=args.redact,
         )
     except Exception as e:
         sys.stderr.write(f"memory-doctor internal error: {e}\n")

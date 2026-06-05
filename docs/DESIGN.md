@@ -194,6 +194,16 @@ not flagged (too noisy).
 lets a CI gate distinguish "something is wrong" from "a credential
 is on disk" by exit code alone, no parsing required.
 
+**Output redaction (`--redact`, default ON).** A real secret in the
+doctor's output is a re-leak. By default the matched secret-shaped
+substring in the finding's `message` is replaced with
+`<REDACTED:CODE>` so the operator can still locate the leak in the
+file but the token value itself is hidden. The escape hatch
+`--no-redact` shows the full value; use it only when the output is
+going somewhere you control (a local rotate script, an encrypted
+note). The default is ON for v1.1+; pre-v1.1 always showed the
+full value.
+
 ### C5 — `BUDGET` (MEMORY and section)
 
 `BUDGET-MEMORY`: the whole `MEMORY.md` has more than

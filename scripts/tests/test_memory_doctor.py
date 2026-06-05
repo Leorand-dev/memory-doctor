@@ -248,10 +248,65 @@ class TestMemoryDoctor(unittest.TestCase):
             secret = [f for f in data["findings"] if f["code"] == "SECRET-GHP"][0]
             self.assertEqual(secret["severity"], "critical")
             self.assertFalse(secret["fixable"])
+            # Default (no flag) must redact the token-shaped substring.
+            self.assertIn("<REDACTED:SECRET-GHP>", secret["message"])
+            self.assertNotIn("ghp_", secret["message"].split("REDACTED")[0] + secret["message"].split("REDACTED")[-1] if "REDACTED" in secret["message"] else secret["message"])
         finally:
             import shutil
 
             shutil.rmtree(secret_ws, ignore_errors=True)
+
+    def test_secret_leak_redact_default_on(self) -> None:
+        """--redact is the default. The token substring must NOT appear in output."""
+        secret_ws = Path(tempfile.mkdtemp())
+        try:
+            (secret_ws / "MEMORY.md").write_text("# M\n", encoding="utf-8")
+            token = self._fake_ghp()
+            (secret_ws / "leaky.md").write_text(
+                "context before " + token + " context after\n",
+                encoding="utf-8",
+            )
+            cp = _run(["--scan", "--json"], secret_ws)
+            data = json.loads(cp.stdout)
+            secret = next(f for f in data["findings"] if f["code"] == "SECRET-GHP")
+            # Token must not appear; context must.
+            self.assertNotIn(token, secret["message"])
+            self.assertIn("context before", secret["message"])
+            self.assertIn("context after", secret["message"])
+            self.assertIn("<REDACTED:SECRET-GHP>", secret["message"])
+        finally:
+            import shutil
+            shutil.rmtree(secret_ws, ignore_errors=True)
+
+    def test_secret_leak_no_redact_override(self) -> None:
+        """--no-redact reveals the full substring. Use only when needed."""
+        secret_ws = Path(tempfile.mkdtemp())
+        try:
+            (secret_ws / "MEMORY.md").write_text("# M\n", encoding="utf-8")
+            token = self._fake_xoxb()
+            (secret_ws / "leaky.md").write_text(
+                "context " + token + " more\n", encoding="utf-8"
+            )
+            cp = _run(["--scan", "--no-redact", "--json"], secret_ws)
+            data = json.loads(cp.stdout)
+            secret = next(f for f in data["findings"] if f["code"] == "SECRET-SLACK")
+            self.assertIn(token, secret["message"])
+            self.assertNotIn("REDACTED", secret["message"])
+        finally:
+            import shutil
+            shutil.rmtree(secret_ws, ignore_errors=True)
+
+    def test_non_secret_finding_unaffected_by_redact(self) -> None:
+        """DUPLICATE-KEY messages must not be touched by --redact."""
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n", encoding="utf-8"
+        )
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        dup = next(f for f in data["findings"] if f["code"] == "DUPLICATE-KEY")
+        # The message must not contain REDACTED.
+        self.assertNotIn("REDACTED", dup["message"])
+        self.assertIn("Name", dup["message"])
 
     def test_secret_leak_never_auto_fixed(self) -> None:
         secret_ws = Path(tempfile.mkdtemp())
