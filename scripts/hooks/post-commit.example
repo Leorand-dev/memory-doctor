@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Example post-commit hook for memory-doctor.
+#
+# After every commit, runs the doctor in quiet mode against the workspace.
+# If it returns a non-zero exit code, prints a one-line warning. NEVER
+# blocks the commit.
+#
+# Install:
+#   cp scripts/hooks/post-commit.example .git/hooks/post-commit
+#   chmod +x .git/hooks/post-commit
+#
+# Or, for a portable setup (recommended):
+#   git config core.hooksPath scripts/hooks
+#   cp scripts/hooks/post-commit.example scripts/hooks/post-commit
+#   chmod +x scripts/hooks/post-commit
+#
+# Skip for one commit:
+#   SKIP_MEMORY_DOCTOR=1 git commit -m "..."
+
+set -u
+if [ -n "${SKIP_MEMORY_DOCTER:-}${SKIP_MEMORY_DOCTOR:-}" ]; then
+  exit 0
+fi
+
+WS="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -z "$WS" ] && exit 0
+[ -f "$WS/scripts/memory-doctor.py" ] || exit 0
+
+OUT="$(python3 "$WS/scripts/memory-doctor.py" --scan --quiet --exclude scripts/tests 2>&1)" || true
+
+case "$OUT" in
+  *worst=critical*)
+    echo "memory-doctor ⚠️  CRITICAL — read carefully:"
+    python3 "$WS/scripts/memory-doctor.py" --scan --exclude scripts/tests
+    ;;
+  *finding\(s\)*)
+    echo "memory-doctor: $OUT"
+    ;;
+  *) : ;;  # clean
+esac
+
+exit 0
