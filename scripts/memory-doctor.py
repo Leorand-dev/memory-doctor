@@ -230,10 +230,16 @@ class Report:
         self.findings.append(f)
 
     def by_severity(self) -> Counter:
-        return Counter(f.severity for f in self.findings)
+        # Count only unsuppressed findings. A suppressed medium does not
+        # count toward the worst-severity exit-code calculation; the
+        # suppression itself is reported via the separate `suppressed` count.
+        return Counter(f.severity for f in self.findings if not f.suppressed)
 
     def by_code(self) -> Counter:
-        return Counter(f.code for f in self.findings)
+        return Counter(f.code for f in self.findings if not f.suppressed)
+
+    def suppressed_count(self) -> int:
+        return sum(1 for f in self.findings if f.suppressed)
 
     def worst(self) -> str:
         sev = self.by_severity()
@@ -810,7 +816,9 @@ def render_text(report: Report, quiet: bool = False) -> str:
     if not report.findings:
         return f"✅ {report.workspace} — no findings.\n"
     if quiet:
-        return f"⚠️  {len(report.findings)} finding(s), worst={report.worst()}\n"
+        suppressed = report.suppressed_count()
+        suffix = f", suppressed={suppressed}" if suppressed else ""
+        return f"⚠️  {len(report.findings)} finding(s), worst={report.worst()}{suffix}\n"
     lines = [
         f"memory-doctor @ {report.workspace}",
         f"  generated: {report.generated_at}",
@@ -924,11 +932,23 @@ def main(argv: list[str] | None = None) -> int:
         print(render_text(report, quiet=args.quiet))
 
     # Exit code policy
+    #   0  clean (no unsuppressed findings, no suppressions used)
+    #   1  unsuppressed findings present
+    #   2  secret leaked (always fail)
+    #   3  internal error
+    #   4  clean, but N findings were suppressed (.memory-doctorignore matched)
+    # A suppressed finding does not count toward the worst-severity bucket,
+    # but if the scan would otherwise be clean AND suppressions were used,
+    # we surface that with exit code 4 so a CI gate can flag drift.
     sev = report.by_severity()
     if sev.get("critical", 0) > 0:
         return 2
-    if sev.get("high", 0) > 0 or sev.get("medium", 0) > 0 or sev.get("low", 0) > 0:
+    unsuppressed_total = sum(sev.values())
+    suppressed = report.suppressed_count()
+    if unsuppressed_total > 0:
         return 1
+    if suppressed > 0:
+        return 4
     return 0
 
 

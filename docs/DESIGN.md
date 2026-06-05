@@ -190,9 +190,21 @@ on GitHub-style tokens is conservative because real tokens are 36+
 chars. Long base64-looking strings without a known prefix are
 intentionally not flagged (too noisy).
 
-**Exit code 2** is reserved exclusively for secret-leak findings. This
-lets a CI gate distinguish "something is wrong" from "a credential
-is on disk" by exit code alone, no parsing required.
+**Exit code matrix:**
+
+| Code | Meaning | When |
+|---|---|---|
+| 0 | clean | no unsuppressed findings, no suppressions used |
+| 1 | findings | at least one unsuppressed finding |
+| 2 | secret leaked | any unsuppressed `SECRET-*` finding |
+| 3 | internal error | unexpected exception during scan |
+| 4 | clean, but `N` findings were suppressed | `.memory-doctorignore` matched, and there are no unsuppressed findings |
+
+A suppressed finding does not count toward the worst-severity bucket.
+If the scan would otherwise be clean AND suppressions were used,
+we surface that with exit code 4 so a CI gate can flag drift. A
+secret that is suppressed does not trigger exit 2; it counts toward
+the suppressed bucket and contributes to exit 4 instead.
 
 **Output redaction (`--redact`, default ON).** A real secret in the
 doctor's output is a re-leak. By default the matched secret-shaped
