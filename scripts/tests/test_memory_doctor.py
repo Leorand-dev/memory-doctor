@@ -432,5 +432,115 @@ class TestMemoryDoctor(unittest.TestCase):
         )
 
 
+    # --- .memory-doctorignore ----------------------------------------------
+
+    def _seed_ignore(self, ws: Path, body: str) -> None:
+        (ws / ".memory-doctorignore").write_text(body, encoding="utf-8")
+
+    def test_ignore_file_missing_is_noop(self) -> None:
+        """No .memory-doctorignore present → no findings suppressed."""
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n", encoding="utf-8"
+        )
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        self.assertEqual(data["summary"]["suppressed"], 0)
+        self.assertFalse(any(f.get("suppressed") for f in data["findings"]))
+
+    def test_ignore_code_suppresses_all_matching(self) -> None:
+        """`code:X` suppresses every finding with that code."""
+        self._seed_ignore(self.ws, "code:DUPLICATE-KEY\n")
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n", encoding="utf-8"
+        )
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        self.assertEqual(data["summary"]["suppressed"], 1)
+        dups = [f for f in data["findings"] if f["code"] == "DUPLICATE-KEY"]
+        self.assertEqual(len(dups), 1)
+        self.assertTrue(dups[0]["suppressed"])
+        self.assertIn("code:DUPLICATE-KEY", dups[0]["suppress_reason"])
+
+    def test_ignore_path_glob(self) -> None:
+        """`path:PATTERN` suppresses all findings whose path matches."""
+        secret_ws = Path(tempfile.mkdtemp())
+        try:
+            (secret_ws / "MEMORY.md").write_text("# M\n", encoding="utf-8")
+            (secret_ws / "leaky.md").write_text(
+                "leaked: " + self._fake_ghp() + "\n", encoding="utf-8"
+            )
+            self._seed_ignore(secret_ws, "path:leaky.md\n")
+            cp = _run(["--scan", "--json"], secret_ws)
+            data = json.loads(cp.stdout)
+            secret = next(f for f in data["findings"] if f["code"] == "SECRET-GHP")
+            self.assertTrue(secret["suppressed"])
+            self.assertIn("path:leaky.md", secret["suppress_reason"])
+        finally:
+            import shutil
+            shutil.rmtree(secret_ws, ignore_errors=True)
+
+    def test_ignore_path_with_line_range(self) -> None:
+        """`path:REL:N-M` suppresses findings in the line range only."""
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n- **Name:** Carol\n- **Name:** Dave\n",
+            encoding="utf-8",
+        )
+        # We have one DUPLICATE-KEY finding at line 1 (Name).
+        # Suppress that specific line.
+        self._seed_ignore(self.ws, "code:DUPLICATE-KEY path:MEMORY.md:1\n")
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        dups = [f for f in data["findings"] if f["code"] == "DUPLICATE-KEY"]
+        self.assertEqual(len(dups), 1)
+        self.assertTrue(dups[0]["suppressed"])
+
+    def test_ignore_code_plus_path_glob(self) -> None:
+        """`code:X path:Y` matches only findings with that code AND path."""
+        secret_ws = Path(tempfile.mkdtemp())
+        try:
+            (secret_ws / "MEMORY.md").write_text("# M\n", encoding="utf-8")
+            (secret_ws / "a.md").write_text("leak1: " + self._fake_ghp() + "\n", encoding="utf-8")
+            (secret_ws / "b.md").write_text("leak2: " + self._fake_ghp() + "\n", encoding="utf-8")
+            self._seed_ignore(secret_ws, "code:SECRET-GHP path:a.md\n")
+            cp = _run(["--scan", "--json"], secret_ws)
+            data = json.loads(cp.stdout)
+            secrets = [f for f in data["findings"] if f["code"] == "SECRET-GHP"]
+            self.assertEqual(len(secrets), 2)
+            suppressed = [f for f in secrets if f["suppressed"]]
+            self.assertEqual(len(suppressed), 1)
+            self.assertEqual(suppressed[0]["path"], "a.md")
+        finally:
+            import shutil
+            shutil.rmtree(secret_ws, ignore_errors=True)
+
+    def test_ignore_comments_and_blanks_ignored(self) -> None:
+        """Comments and blank lines must be ignored, not treated as rules."""
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n", encoding="utf-8"
+        )
+        self._seed_ignore(
+            self.ws,
+            "# this is a comment\n\n   \ncode:DUPLICATE-KEY\n# trailing comment\n",
+        )
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        dups = [f for f in data["findings"] if f["code"] == "DUPLICATE-KEY"]
+        self.assertEqual(len(dups), 1)
+        self.assertTrue(dups[0]["suppressed"])
+
+    def test_ignore_summary_in_json(self) -> None:
+        """--json summary must include suppressed and unsuppressed counts."""
+        (self.ws / "MEMORY.md").write_text(
+            "- **Name:** Alice\n- **Name:** Bob\n", encoding="utf-8"
+        )
+        self._seed_ignore(self.ws, "code:DUPLICATE-KEY\n")
+        cp = _run(["--scan", "--json"], self.ws)
+        data = json.loads(cp.stdout)
+        self.assertIn("suppressed", data["summary"])
+        self.assertIn("unsuppressed", data["summary"])
+        self.assertEqual(data["summary"]["suppressed"], 1)
+        self.assertEqual(data["summary"]["unsuppressed"], data["summary"]["total"] - 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

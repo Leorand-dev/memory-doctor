@@ -73,6 +73,31 @@ For the full semantics — what each check does, why some things are
 intentionally not auto-fixed, how to extend the doctor — see
 [`docs/DESIGN.md`](DESIGN.md).
 
+## 4b. Silence known false positives
+
+Add a `.memory-doctorignore` at the workspace root (gitignore-style):
+
+```gitignore
+# Suppress all SECRET-GHP findings anywhere
+code:SECRET-GHP
+
+# Suppress all findings under memory/archive/
+path:memory/archive
+
+# Suppress a specific finding (code + path + line)
+code:STALE-ITEM path:.learnings/LEARNINGS.md:40-50
+
+# Multiple conditions on one line: must match both code AND path
+code:DUPLICATE-KEY path:MEMORY.md:9
+```
+
+Suppressed findings are still printed (with a `[suppressed]` tag and
+the rule that matched) so the audit trail stays complete, but they
+**do not** count toward the worst-severity exit code.
+
+Use `--ignore-file path/to/other` to point at a different filename
+(useful for testing rules in CI).
+
 ## 5. Run the tests
 
 ```bash

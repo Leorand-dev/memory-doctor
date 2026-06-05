@@ -32,6 +32,9 @@ value (only when the output stays in a trusted channel).
 
 For the full semantics of each check, see [`docs/DESIGN.md`](docs/DESIGN.md).
 
+Suppress known false positives with a gitignore-style
+[`.memory-doctorignore`](docs/QUICKSTART.md#4b-silence-known-false-positives).
+
 ## Quick start
 
 ```bash
