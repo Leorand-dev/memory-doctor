@@ -81,6 +81,122 @@ ENTITY_ID_RE = re.compile(r"\b([a-z]{3,4}_[a-f0-9]{6,8})\b")
 
 
 # --------------------------------------------------------------------------- #
+# .memory-doctorignore — parser + matcher
+# --------------------------------------------------------------------------- #
+#
+# Syntax (gitignore-style; # is comment, blank lines ignored):
+#
+#   code:CODE                    # suppress all findings with this code
+#   path:RELATIVE_PATH           # suppress all findings at this path (glob)
+#   code:CODE path:REL[:LINE[-LINE]]
+#                                # suppress findings matching code AND (path,
+#                                # optionally a line or line range)
+
+_IGNORE_LINE_RE = re.compile(
+    r"^\s*(?P<body>(?:code:[A-Za-z0-9_-]+|path:[^\s#]+)(?:\s+(?:code:[A-Za-z0-9_-]+|path:[^\s#]+))*)\s*$"
+)
+_IGNORE_TOKEN_RE = re.compile(r"(code|path):([^\s#]+)")
+
+
+def _parse_ignore_file(path: Path) -> list[dict]:
+    """Parse a .memory-doctorignore file into a list of rule dicts.
+
+    Each rule has:
+      - "codes": set[str] | None — None means "match any code"
+      - "path_glob": str | None — None means "match any path"
+      - "line_lo": int | None
+      - "line_hi": int | None — if set, line_lo..line_hi inclusive
+      - "raw": str — the original line, for `suppress_reason` reporting
+    """
+    rules: list[dict] = []
+    if not path.exists():
+        return rules
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return rules
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = _IGNORE_LINE_RE.match(raw)
+        if not m:
+            continue
+        body = m.group("body")
+        codes: set[str] = set()
+        path_glob: str | None = None
+        line_lo: int | None = None
+        line_hi: int | None = None
+        for kind, val in _IGNORE_TOKEN_RE.findall(body):
+            if kind == "code":
+                codes.add(val)
+            elif kind == "path":
+                pv = val
+                # path:NAME:N or path:NAME:N-M  (one colon)
+                # Real paths rarely contain colons in this domain, so we
+                # treat the suffix after the last ":" as a line spec when
+                # it parses as N or N-M.
+                line_spec: str | None = None
+                if ":" in pv:
+                    head, _, tail = pv.rpartition(":")
+                    if "-" in tail and all(p.isdigit() for p in tail.split("-")):
+                        line_spec = tail
+                        pv = head
+                    elif tail.isdigit():
+                        line_spec = tail
+                        pv = head
+                path_glob = pv
+                if line_spec is not None:
+                    if "-" in line_spec:
+                        lo_s, hi_s = line_spec.split("-", 1)
+                        try:
+                            line_lo = int(lo_s)
+                            line_hi = int(hi_s)
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            line_lo = line_hi = int(line_spec)
+                        except ValueError:
+                            pass
+        rules.append({
+            "codes": codes or None,
+            "path_glob": path_glob,
+            "line_lo": line_lo,
+            "line_hi": line_hi,
+            "raw": raw,
+        })
+    return rules
+
+
+def _matches_rule(finding, rule: dict) -> bool:
+    if rule["codes"] is not None and finding.code not in rule["codes"]:
+        return False
+    if rule["path_glob"] is not None:
+        import fnmatch
+        if not fnmatch.fnmatchcase(finding.path, rule["path_glob"]):
+            return False
+    if rule["line_lo"] is not None:
+        if finding.line is None:
+            return False
+        if finding.line < rule["line_lo"]:
+            return False
+        if rule["line_hi"] is not None and finding.line > rule["line_hi"]:
+            return False
+    return True
+
+
+def _apply_ignore_rules(findings: list, rules: list) -> list:
+    """Mutates each finding in place: sets `suppressed` and `suppress_reason`."""
+    for f in findings:
+        for rule in rules:
+            if _matches_rule(f, rule):
+                f.suppressed = True
+                f.suppress_reason = f"matched ignore rule: {rule['raw'].strip()}"
+                break
+    return findings
+
+# --------------------------------------------------------------------------- #
 # Data model
 # --------------------------------------------------------------------------- #
 
@@ -96,6 +212,8 @@ class Finding:
     message: str         # human-readable
     suggestion: str = "" # what to do
     fixable: bool = False  # can --fix touch this safely?
+    suppressed: bool = False  # matched a .memory-doctorignore rule
+    suppress_reason: str = ""  # human-readable which rule matched
 
     def to_dict(self) -> dict:
         return {k: v for k, v in asdict(self).items() if v is not None}
@@ -125,12 +243,15 @@ class Report:
         return "none"
 
     def to_dict(self) -> dict:
+        suppressed = sum(1 for f in self.findings if f.suppressed)
         return {
             "workspace": self.workspace,
             "generated_at": self.generated_at,
             "stats": self.stats,
             "summary": {
                 "total": len(self.findings),
+                "unsuppressed": len(self.findings) - suppressed,
+                "suppressed": suppressed,
                 "by_severity": dict(self.by_severity()),
                 "by_code": dict(self.by_code()),
                 "worst": self.worst(),
@@ -627,6 +748,7 @@ def run_doctor(
     max_section_lines: int = 50,
     exclude: Iterable[str] = (),
     redact: bool = True,
+    ignore_file_name: str = ".memory-doctorignore",
 ) -> Report:
     workspace = workspace.resolve()
     report = Report(workspace=str(workspace), generated_at=_now_iso())
@@ -653,9 +775,20 @@ def run_doctor(
     for f in _check_ontology_schema(workspace):
         report.add(f)
 
-    # sort findings: severity desc, then path, then line
+    # Apply .memory-doctorignore rules: set `suppressed` on each finding that
+    # matches. (Step 3 wires exit code 4 for clean-with-suppressions.)
+    rules = _parse_ignore_file(workspace / ignore_file_name)
+    report.stats["ignore_rules_loaded"] = len(rules)
+    _apply_ignore_rules(report.findings, rules)
+
+    # sort findings: severity desc, then path, then line; suppressed last
     report.findings.sort(
-        key=lambda f: (-SEVERITY_ORDER.get(f.severity, 0), f.path, f.line or 0)
+        key=lambda f: (
+            f.suppressed,
+            -SEVERITY_ORDER.get(f.severity, 0),
+            f.path,
+            f.line or 0,
+        )
     )
     return report
 
@@ -695,9 +828,12 @@ def render_text(report: Report, quiet: bool = False) -> str:
         if f.line is not None:
             loc = f"{f.path}:{f.line}"
         fixable = "  [fixable]" if f.fixable else ""
-        lines.append(f"  {f.code}{fixable}  {loc}")
+        suppressed = "  [suppressed]" if f.suppressed else ""
+        lines.append(f"  {f.code}{fixable}{suppressed}  {loc}")
         lines.append(f"      {f.message}")
-        if f.suggestion:
+        if f.suppress_reason:
+            lines.append(f"      → {f.suppress_reason}")
+        elif f.suggestion:
             lines.append(f"      → {f.suggestion}")
         lines.append("")
     return "\n".join(lines)
@@ -755,6 +891,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_false",
         help="Show the full offending line (DANGEROUS — may re-leak the secret).",
     )
+    ap.add_argument(
+        "--ignore-file",
+        default=".memory-doctorignore",
+        metavar="PATH",
+        help="Filename of the ignore file at the workspace root (default: .memory-doctorignore).",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -765,6 +907,7 @@ def main(argv: list[str] | None = None) -> int:
             max_section_lines=args.max_section_lines,
             exclude=args.exclude,
             redact=args.redact,
+            ignore_file_name=args.ignore_file,
         )
     except Exception as e:
         sys.stderr.write(f"memory-doctor internal error: {e}\n")

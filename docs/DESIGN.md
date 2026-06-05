@@ -324,11 +324,26 @@ without forking:
    (`MEMORY.md`, `.learnings/*.md`, `memory/*.md`) are *never* skipped
    — the doctor's job is to audit those.
 
-3. **Suppression file (planned).** A future `.memory-doctorignore`
-   with the same syntax as `.gitignore` (relative path, `!` to
-   un-ignore) will let users mark known false positives. The
-   `code` field is the stable handle for `code:SECRET-GHP` style
-   suppressions.
+3. **Suppression file (`.memory-doctorignore`)** — gitignore-style
+   syntax. Each non-comment, non-blank line is a rule:
+
+   ```
+   code:CODE                       # suppress all findings with this code
+   path:RELATIVE_PATH              # suppress all findings at this path (glob)
+   code:CODE path:REL[:LINE[-LINE]]
+                                   # suppress findings matching code AND
+                                   # path (optionally a line or line range)
+   ```
+
+   The doctor loads the file at the workspace root, parses each rule
+   into a `(codes, path_glob, line_lo, line_hi)` tuple, and applies
+   them in order. The first matching rule wins. Suppressed findings
+   remain in the report with `suppressed: true` and a `suppress_reason`
+   string, but do not count toward the worst-severity exit code
+   (Step 3 wires exit code 4 for "clean but suppressed"). The
+   `--ignore-file` flag overrides the default filename.
+
+   See `QUICKSTART.md` for worked examples.
 
 ## 7. Why stdlib only?
 
