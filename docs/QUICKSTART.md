@@ -1,5 +1,7 @@
 # memory-doctor. Quickstart
 
+> 🌐 [English](QUICKSTART.md) | [简体中文](QUICKSTART.zh-CN.md)
+
 A health check for an agent's long-term memory system. Stdlib only.
 No install step.
 

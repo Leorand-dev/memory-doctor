@@ -1,5 +1,7 @@
 # memory-doctor
 
+> 🌐 [English](README.md) | [简体中文](README.zh-CN.md)
+
 A health check for an AI agent's long-term memory system.
 
 - **Stdlib only.** No install step, no dependencies, no network.

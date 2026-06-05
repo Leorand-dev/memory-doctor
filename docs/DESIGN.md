@@ -1,5 +1,7 @@
 # memory-doctor. Design Document
 
+> 🌐 [English](DESIGN.md) | [简体中文](DESIGN.zh-CN.md)
+
 > Health check for an agent's long-term memory system.
 > Stdlib-only Python 3, no external dependencies, safe by default.
 
