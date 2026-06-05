@@ -22,7 +22,7 @@ EXTRA_ARGS="${5:-}"
 # Resolve the doctor script path. $GITHUB_ACTION_PATH is set by the
 # runner to the directory containing this action.yml.
 SCRIPT_DIR="${GITHUB_ACTION_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-DOCTOR="$SCRIPT_DIR/../scripts/memory-doctor.py"
+DOCTOR="$SCRIPT_DIR/scripts/memory-doctor.py"
 
 if [ ! -f "$DOCTOR" ]; then
   echo "::error::memory-doctor.py not found at $DOCTOR"

@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test action on a clean seeded workspace (should pass)
-        uses: ./action
+        uses: ./
         with:
           workspace: ./tests/fixtures/clean-workspace
           fail-on: medium
@@ -43,7 +43,7 @@ jobs:
           "
       - name: Test action on a workspace with secrets (should fail)
         id: leaky
-        uses: ./action
+        uses: ./
         with:
           workspace: ./tests/fixtures/leaky-workspace
           fail-on: medium
