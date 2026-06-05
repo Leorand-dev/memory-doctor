@@ -1,0 +1,8 @@
+{
+  "stale_days": 60,
+  "max_memory_lines": 200,
+  "max_section_lines": 30,
+  "exclude": ["scripts/tests"],
+  "redact": true,
+  "ignore_file": ".memory-doctorignore"
+}
