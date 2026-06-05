@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: memory-doctor
-        uses: leo-afk-sudo/memory-doctor@v1
+        uses: Leorand-dev/memory-doctor@v1
         with:
           workspace: .
           fail-on: medium

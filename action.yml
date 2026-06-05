@@ -1,4 +1,4 @@
-# GitHub Action: leo-afk-sudo/memory-doctor@v1
+# GitHub Action: Leorand-dev/memory-doctor@v1
 # Runs the memory-doctor Python health check on the workspace and
 # maps the exit code to a job status. Designed to drop into any
 # Python project with no setup.

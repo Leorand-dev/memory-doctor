@@ -41,7 +41,7 @@ Suppress known false positives with a gitignore-style
 
 ```bash
 # 1. Get the file
-git clone https://github.com/leo-afk-sudo/memory-doctor.git
+git clone https://github.com/Leorand-dev/memory-doctor.git
 cd memory-doctor
 
 # 2. Run it
@@ -67,7 +67,7 @@ The project ships an official GitHub Action in `action/`. Drop this
 into any project with a Python workspace:
 
 ```yaml
-- uses: leo-afk-sudo/memory-doctor@v1
+- uses: Leorand-dev/memory-doctor@v1
   with:
     workspace: .
     fail-on: medium

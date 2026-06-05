@@ -40,7 +40,7 @@ $ python3 scripts/memory-doctor.py --scan --quiet
 
 ```bash
 # 1. 获取文件
-git clone https://github.com/leo-afk-sudo/memory-doctor.git
+git clone https://github.com/Leorand-dev/memory-doctor.git
 cd memory-doctor
 
 # 2. 运行
@@ -65,7 +65,7 @@ python3 scripts/tests/test_memory_doctor.py
 项目在 `action/` 下提供了官方 GitHub Action。可直接接入任何带 Python 工作区的项目：
 
 ```yaml
-- uses: leo-afk-sudo/memory-doctor@v1
+- uses: Leorand-dev/memory-doctor@v1
   with:
     workspace: .
     fail-on: medium

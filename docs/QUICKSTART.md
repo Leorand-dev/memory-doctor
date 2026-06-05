@@ -12,11 +12,11 @@ Either clone this repo, or copy `scripts/memory-doctor.py` (one file,
 
 ```bash
 # Option A: clone
-git clone https://github.com/leo-afk-sudo/memory-doctor.git
+git clone https://github.com/Leorand-dev/memory-doctor.git
 cd memory-doctor
 
 # Option B: just grab the file
-curl -O https://raw.githubusercontent.com/leo-afk-sudo/memory-doctor/main/scripts/memory-doctor.py
+curl -O https://raw.githubusercontent.com/Leorand-dev/memory-doctor/main/scripts/memory-doctor.py
 chmod +x memory-doctor.py
 ```
 
