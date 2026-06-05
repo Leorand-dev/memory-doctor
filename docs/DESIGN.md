@@ -1,4 +1,4 @@
-# memory-doctor — Design Document
+# memory-doctor. Design Document
 
 > Health check for an agent's long-term memory system.
 > Stdlib-only Python 3, no external dependencies, safe by default.
@@ -12,28 +12,28 @@ long-term notes (`MEMORY.md`), per-day logs (`memory/YYYY-MM-DD.md`),
 in-process learnings (`.learnings/*.md`), typed knowledge graphs
 (`memory/ontology/graph.jsonl`). Over time this state rots in subtle ways:
 
-- **Facts go stale** — a "Last-Seen" date from six months ago is no longer
+- **Facts go stale.** A "Last-Seen" date from six months ago is no longer
   trustworthy evidence that the fact still holds.
-- **Contradictions creep in** — the same key gets defined in two places
+- **Contradictions creep in.** The same key gets defined in two places
   with slightly different values.
-- **Relations dangle** — an entity gets renamed or deleted but a relation
+- **Relations dangle.** An entity gets renamed or deleted but a relation
   still references its old id.
-- **Secrets leak** — a debugging session accidentally pastes a real API
+- **Secrets leak.** A debugging session accidentally pastes a real API
   key into a daily note. The agent's memory file is now a credential
   disclosure waiting to happen.
-- **Memory files bloat** — the curated note grows past what any human
+- **Memory files bloat.** The curated note grows past what any human
   can scan in 60 seconds, defeating the point of curation.
 
 `memory-doctor` is a single-file, stdlib-only health check that surfaces
 all five classes of problem in one pass, with machine-readable output
 and CI-friendly exit codes. It is designed to be:
 
-- **Strict enough to be useful** — narrow, high-precision secret
+- **Strict enough to be useful.** Narrow, high-precision secret
   patterns; first-stale-wins; explicit `fixable` flag per finding.
-- **Safe enough to run unattended** — read-only by default; `--fix`
-  only ever touches findings that opt in; secrets are **never**
+- **Safe enough to run unattended.** Read-only by default; `--fix`
+  only ever touches findings that opt in; secrets are never
   auto-removed, only reported.
-- **Cheap enough to run often** — sub-second on a typical workspace,
+- **Cheap enough to run often.** Sub-second on a typical workspace,
   zero dependencies, no network, no LLM calls.
 
 ## 2. Architecture
@@ -48,7 +48,7 @@ scripts/
 The script is intentionally **one file**. There is no package layout,
 no plugin system, no config-file parser. Configuration happens entirely
 through CLI flags. This makes the tool trivial to vendor into any
-project — copy the file, run it, done.
+project. Copy the file, run it, done.
 
 ### Data model
 
@@ -122,7 +122,7 @@ Parses every line of the form:
 - * **Key:** value   (any list marker)
 ```
 
-(Format detection is intentionally liberal — see the regex in
+(Format detection is intentionally liberal. See the regex in
 `_check_duplicates`.) If the same key appears more than once in a single
 file *and* the values disagree, emit a `DUPLICATE-KEY` finding listing
 every line and every value. If the values agree, the duplicate is
@@ -152,7 +152,7 @@ file then `Path.replace`). It refuses to touch a line that wasn't
 flagged, so running `--fix` is idempotent.
 
 **Known limitation:** the current implementation does not handle
-`op: "delete"` — a deleted entity that was previously referenced will
+`op: "delete"`: a deleted entity that was previously referenced will
 not be detected as dangling. Tracked as a future extension.
 
 ### C4 — `SECRET-LEAK` 🔴
@@ -171,12 +171,12 @@ and a list of binary suffixes) for seven high-precision patterns:
 | `SECRET-PEM` | `-----BEGIN ...PRIVATE KEY-----` | PEM private key block |
 | `SECRET-BEARER` | `Bearer <40+ chars>` | Long bearer token in a header |
 
-**Deliberate non-action — even with `--fix`.** The doctor reports a
-`critical` finding and exits with code `2`. It will *never* remove
-the line, *never* rewrite the file. The reasoning:
+**Deliberate non-action, even with `--fix`.** The doctor reports a
+`critical` finding and exits with code `2`. It will never remove
+the line, never rewrite the file. The reasoning:
 
 1. Removing a secret without rotating it is worse than leaving it
-   visible — an attacker with read access now has credentials that
+   visible. An attacker with read access now has credentials that
    the operator thinks are deleted.
 2. A line that *looks* like a secret might be a test fixture, a
    documentation example, or a placeholder. Auto-rewriting is a great
@@ -184,11 +184,11 @@ the line, *never* rewrite the file. The reasoning:
 3. The user (or their CI) is the right place to make the rotate-or-
    delete decision. The doctor is a sensor, not an actuator.
 
-**Why narrow patterns?** Recall here would be a disaster — false
+**Why narrow patterns?** Recall here would be a disaster; false
 positives train users to ignore the doctor. A 20-character minimum
-on GitHub-style tokens is conservative: real tokens are 36+ chars.
-Long base64-looking strings without a known prefix are intentionally
-not flagged (too noisy).
+on GitHub-style tokens is conservative because real tokens are 36+
+chars. Long base64-looking strings without a known prefix are
+intentionally not flagged (too noisy).
 
 **Exit code 2** is reserved exclusively for secret-leak findings. This
 lets a CI gate distinguish "something is wrong" from "a credential
@@ -216,9 +216,9 @@ pointing at the section header. If the file has no `##` headers, the
 whole file is treated as one implicit section.
 
 **Why split MEMORY and per-section?** A 1000-line MEMORY.md with 30
-sections of 33 lines each is *not* a budget problem — it's just a
+sections of 33 lines each is not a budget problem. It's just a
 well-organized long document. A 200-line file with one 180-line
-section is *bad* — that section needs splitting. The two checks catch
+section is bad: that section needs splitting. The two checks catch
 different pathologies.
 
 ### C6 — `FILE-MISSING`
@@ -322,9 +322,9 @@ without forking:
 2. **`--exclude` for sub-trees.** Pass a relative path (repeatable)
    to skip a directory in the text-file scan. Memory-style files
    (`MEMORY.md`, `.learnings/*.md`, `memory/*.md`) are *never* skipped
-   — the doctor's job is to audit those.
+   The doctor's job is to audit those.
 
-3. **Suppression file (`.memory-doctorignore`)** — gitignore-style
+3. **Suppression file (`.memory-doctorignore`).** Gitignore-style
    syntax. Each non-comment, non-blank line is a rule:
 
    ```
@@ -345,10 +345,10 @@ without forking:
 
    See `QUICKSTART.md` for worked examples.
 
-## 7. Why stdlib only?
+## 7. Stdlib only
 
 The doctor is meant to be vendored into any Python project with zero
-friction. Adding a dependency — even a small one — creates a setup
+friction. Adding a dependency (even a small one) creates a setup
 tax, a security surface, and a version-pin headache. The checks we
 need (regex, file walking, JSON parsing, dataclass) are all in the
 stdlib since Python 3.2.
@@ -391,7 +391,7 @@ python3 scripts/tests/test_memory_doctor.py
 `scripts/hooks/post-commit` shows the recommended local pattern:
 register a hook via `git config core.hooksPath scripts/hooks`, then
 the hook runs `memory-doctor --scan --quiet --exclude scripts/tests`
-after every commit. The hook **never blocks the commit** — it prints
+after every commit. The hook never blocks the commit. It prints
 findings if any exist and exits 0 either way. To skip for a specific
 commit: `SKIP_MEMORY_DOCTOR=1 git commit ...`.
 
@@ -420,7 +420,7 @@ you notice). The 7-day window is a sweet spot for a typical agent.
 - **No `op: "delete"` handling in the graph.** Tracked.
 - **No secret redaction in output.** When a secret is found, the
   doctor prints the first 80 characters of the offending line. This
-  is a privacy trade-off — a redacted output would be safer to paste
+  is a privacy trade-off. A redacted output would be safer to paste
   into chat, but harder to act on. The recommendation is to treat
   any doctor run that produced a `SECRET-*` finding as sensitive
   and not paste the output into shared channels.
@@ -428,7 +428,7 @@ you notice). The 7-day window is a sweet spot for a typical agent.
   the text-file scan walks the whole tree on every run. This is
   fine for typical agent workspaces (≤ a few hundred files) but
   would need streaming for monorepo-scale directories. If you hit
-  that, file an issue — the design accommodates it via a generator
+  that, file an issue. The design accommodates it via a generator
   in `_gather_files`.
 - **English-only suggestions.** The human-readable output is in
   English. The `suggestion` field is a string in the JSON output and

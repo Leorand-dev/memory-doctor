@@ -1,4 +1,4 @@
-# memory-doctor — Quickstart
+# memory-doctor. Quickstart
 
 A health check for an agent's long-term memory system. Stdlib only.
 No install step.
@@ -69,8 +69,8 @@ SKIP_MEMORY_DOCTOR=1 git commit -m "..."
 
 ## 4. Read the design
 
-For the full semantics — what each check does, why some things are
-intentionally not auto-fixed, how to extend the doctor — see
+For the full semantics (what each check does, why some things are
+intentionally not auto-fixed, how to extend the doctor), see
 [`docs/DESIGN.md`](DESIGN.md).
 
 ## 4b. Silence known false positives
@@ -135,7 +135,7 @@ have no external dependencies.
 
 1. **Read the message and suggestion.** They're specific.
 2. **Open the file at the reported path:line.**
-3. **Decide.** The doctor is a sensor, not an actuator — it never
+3. **Decide.** The doctor is a sensor, not an actuator. It never
    deletes data, never rotates credentials. You do.
 4. **For secrets:** rotate the credential *first*, then remove the
    leaked line. Removing without rotating is worse than not removing.
