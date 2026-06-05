@@ -1,0 +1,29 @@
+name: memory-doctor
+
+# Runs the memory-doctor health check on every push and PR.
+# Adjust `fail-on` to your tolerance. Default is `medium`, which
+# catches DUPLICATE-KEY, DANGLING-REF, BUDGET-MEMORY, ONTOLOGY-STRUCT
+# but not info-only FILE-MISSING.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  memory-doctor:
+    name: Run memory-doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: memory-doctor
+        uses: leo-afk-sudo/memory-doctor@v1
+        with:
+          workspace: .
+          fail-on: medium
+          redact: "true"
+          exclude: scripts/tests
