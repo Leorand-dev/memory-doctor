@@ -73,7 +73,7 @@ into any project with a Python workspace:
     exclude: scripts/tests
 ```
 
-See [`action/README.md`](action/README.md) for inputs, outputs, and
+See [`docs/ACTION.md`](docs/ACTION.md) for inputs, outputs, and
 the exit-code-to-job-status map.
 
 ## Design principles
