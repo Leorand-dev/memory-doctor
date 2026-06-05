@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: leo-afk-sudo/memory-doctor@v1
+      - uses: Leorand-dev/memory-doctor@v1
         with:
           workspace: .
           fail-on: medium       # info | low | medium | high | critical

@@ -10,11 +10,11 @@ Agent 长期记忆系统的健康检查。仅依赖标准库,无需安装。
 
 ```bash
 # 选项 A:克隆仓库
-git clone https://github.com/leo-afk-sudo/memory-doctor.git
+git clone https://github.com/Leorand-dev/memory-doctor.git
 cd memory-doctor
 
 # 选项 B:只抓取文件
-curl -O https://raw.githubusercontent.com/leo-afk-sudo/memory-doctor/main/scripts/memory-doctor.py
+curl -O https://raw.githubusercontent.com/Leorand-dev/memory-doctor/main/scripts/memory-doctor.py
 chmod +x memory-doctor.py
 ```
 
