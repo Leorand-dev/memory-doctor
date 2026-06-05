@@ -126,10 +126,16 @@ have no external dependencies.
 
 | Code | Meaning |
 |---|---|
-| 0 | clean |
-| 1 | findings, none critical |
+| 0 | clean (no findings, no suppressions) |
+| 1 | unsuppressed findings |
 | 2 | **secret leaked** (always fail) |
 | 3 | internal error |
+| 4 | clean, but `N` findings were suppressed via `.memory-doctorignore` |
+
+Exit code 4 lets a CI gate tell the difference between "the workspace
+is healthy" (0) and "the workspace is healthy **but** you have
+suppression rules in play" (4). Use 4 to flag drift in how many
+suppressions a workspace is accumulating.
 
 ## When something fires
 

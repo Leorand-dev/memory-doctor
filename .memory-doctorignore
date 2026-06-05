@@ -1,0 +1,14 @@
+# Standalone-repo expectations: this is a vendored copy of the doctor,
+# not a full agent workspace. The 6 core files (SOUL, TOOLS, USER, ...)
+# intentionally don't exist here. Silence the FILE-MISSING noise.
+
+# Silence FILE-MISSING for the 6 agent-bootstrap files that don't apply
+path:AGENTS.md
+path:IDENTITY.md
+path:MEMORY.md
+path:SOUL.md
+path:TOOLS.md
+path:USER.md
+
+# Silence the optional schema advisory
+code:ONTOLOGY-STRUCT
