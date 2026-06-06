@@ -5,7 +5,7 @@
 A health check for an AI agent's long-term memory system.
 
 - **Stdlib only.** No install step, no dependencies, no network.
-- **Single file.** `scripts/memory-doctor.py`, ~750 lines.
+- **Single file.** `scripts/memory-doctor.py`, ~1300 lines.
 - **Safe by default.** Read-only; `--fix` only acts on findings that opt in.
 - **CI-friendly.** Exit codes distinguish "findings" (1) from "secret leaked" (2).
 
@@ -26,11 +26,15 @@ value (only when the output stays in a trusted channel).
 | `SECRET-LEAK` | 🔴 critical | A GitHub PAT pasted into a daily note |
 | `DUPLICATE-KEY` | 🟡 medium | `**Timezone:**` defined in two sections with different values |
 | `DANGLING-REF` | 🟡 medium | Ontology relation points at a deleted entity id |
-| `STALE-ITEM` | 🔵 low | LRN/ERR entry not seen for >90 days |
 | `BUDGET-MEMORY` | 🔵 low | `MEMORY.md` past 300 lines |
 | `BUDGET-SECTION` | 🔵 low | A single section past 50 lines |
+| `STALE-ITEM` | 🔵 low | LRN/ERR entry not seen for >90 days |
 | `FILE-MISSING` | ⚪ info | Core bootstrap file absent |
 | `ONTOLOGY-STRUCT` | 🟡/⚪ | Malformed graph.jsonl or missing schema |
+| `EMPTY-HEADER` | 🔵 low | `## heading` with no body in `.learnings/*.md` |
+| `BUDGET-MEMORY-SOFT` / `HARD` / `CRIT` | ⚪/🔵/🟡 | 3-tier graded warning at 200 / 300 / 500 lines |
+| `ONTOLOGY-ISOLATED` | 🔵 low | Ontology node with no relations |
+| `DAILY-MEMORY-NAME` | 🔵 low | `memory/*.md` filename does not match `YYYY-MM-DD.md` |
 
 For the full semantics of each check, see [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -56,8 +60,8 @@ Full instructions in [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 ## Tests
 
 ```bash
-python3 scripts/tests/test_memory_doctor.py
-# Ran 19 tests in 2.0s
+python3 -m unittest scripts.tests.test_memory_doctor
+# Ran 53 tests in ~6s
 # OK
 ```
 

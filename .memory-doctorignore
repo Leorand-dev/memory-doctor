@@ -12,3 +12,7 @@ path:USER.md
 
 # Silence the optional schema advisory
 code:ONTOLOGY-STRUCT
+
+# Test fixtures use runtime-built real-shape tokens as test data.
+# Silence the secret-leak noise from the test directory.
+path:scripts/tests/*

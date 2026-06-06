@@ -27,7 +27,7 @@ in-process learnings (`.learnings/*.md`), typed knowledge graphs
   can scan in 60 seconds, defeating the point of curation.
 
 `memory-doctor` is a single-file, stdlib-only health check that surfaces
-all five classes of problem in one pass, with machine-readable output
+all classes of problem in one pass, with machine-readable output
 and CI-friendly exit codes. It is designed to be:
 
 - **Strict enough to be useful.** Narrow, high-precision secret

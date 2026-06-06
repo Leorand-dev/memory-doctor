@@ -787,3 +787,188 @@ class TestMemoryDoctor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+# C8 — EMPTY-HEADER -------------------------------------------------------
+
+class TestEmptyHeader(unittest.TestCase):
+    def setUp(self) -> None:
+        self.ws = Path(tempfile.mkdtemp(prefix="md_test_empty_hdr_"))
+        (self.ws / ".learnings").mkdir()
+        (self.ws / "MEMORY.md").write_text("# MEMORY\n", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_empty_header_detected(self) -> None:
+        (self.ws / ".learnings" / "LEARNINGS.md").write_text(
+            "# LEARNINGS\n\n## Summary\n\n## Real section\n- x\n",
+            encoding="utf-8",
+        )
+        r = _run(["--scan", "--json"], self.ws)
+        codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+        self.assertIn("EMPTY-HEADER", codes)
+
+    def test_filled_header_not_flagged(self) -> None:
+        (self.ws / ".learnings" / "LEARNINGS.md").write_text(
+            "# LEARNINGS\n\n## Summary\n- real body\n",
+            encoding="utf-8",
+        )
+        r = _run(["--scan", "--json"], self.ws)
+        codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+        self.assertNotIn("EMPTY-HEADER", codes)
+
+    def test_learnings_dir_missing_is_noop(self) -> None:
+        import shutil as _sh
+        _sh.rmtree(self.ws / ".learnings")
+        r = _run(["--scan", "--json"], self.ws)
+        codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+        self.assertNotIn("EMPTY-HEADER", codes)
+
+
+# C9 — BUDGET-MEMORY tier --------------------------------------------------
+
+class TestMemoryBudgetTier(unittest.TestCase):
+    def _ws(self, n_lines: int) -> Path:
+        ws = Path(tempfile.mkdtemp(prefix="md_test_budget_tier_"))
+        lines = ["# MEMORY\n"] + [f"line {i}\n" for i in range(n_lines)]
+        (ws / "MEMORY.md").write_text("".join(lines), encoding="utf-8")
+        return ws
+
+    def test_soft_threshold_info(self) -> None:
+        ws = self._ws(220)
+        try:
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"]: f for f in json.loads(r.stdout)["findings"]}
+            self.assertIn("BUDGET-MEMORY-SOFT", codes)
+            self.assertEqual(codes["BUDGET-MEMORY-SOFT"]["severity"], "info")
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_hard_threshold_low(self) -> None:
+        ws = self._ws(320)
+        try:
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"]: f for f in json.loads(r.stdout)["findings"]}
+            self.assertIn("BUDGET-MEMORY-SOFT", codes)
+            self.assertIn("BUDGET-MEMORY-HARD", codes)
+            self.assertEqual(codes["BUDGET-MEMORY-HARD"]["severity"], "low")
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_critical_threshold_medium(self) -> None:
+        ws = self._ws(550)
+        try:
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"]: f for f in json.loads(r.stdout)["findings"]}
+            self.assertIn("BUDGET-MEMORY-CRIT", codes)
+            self.assertEqual(codes["BUDGET-MEMORY-CRIT"]["severity"], "medium")
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+
+# C10 — ONTOLOGY-ISOLATED --------------------------------------------------
+
+class TestOntologyIsolated(unittest.TestCase):
+    def test_isolated_node_detected(self) -> None:
+        ws = Path(tempfile.mkdtemp(prefix="md_test_iso_"))
+        try:
+            (ws / "memory" / "ontology").mkdir(parents=True)
+            (ws / "memory" / "ontology" / "graph.jsonl").write_text(
+                json.dumps({"op": "create", "entity": {"id": "pers_alice", "type": "Person"}}) + "\n"
+                + json.dumps({"op": "create", "entity": {"id": "pers_bob", "type": "Person"}}) + "\n"
+                + json.dumps({"op": "create", "entity": {"id": "dev_laptop", "type": "Device"}}) + "\n"
+                + json.dumps({"op": "relate", "relation": {"from": "pers_alice", "to": "dev_laptop"}}) + "\n",
+                encoding="utf-8",
+            )
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"]: f["message"] for f in json.loads(r.stdout)["findings"]}
+            self.assertIn("ONTOLOGY-ISOLATED", codes)
+            self.assertIn("pers_bob", codes["ONTOLOGY-ISOLATED"])
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_all_connected_no_finding(self) -> None:
+        ws = Path(tempfile.mkdtemp(prefix="md_test_iso2_"))
+        try:
+            (ws / "memory" / "ontology").mkdir(parents=True)
+            (ws / "memory" / "ontology" / "graph.jsonl").write_text(
+                json.dumps({"op": "create", "entity": {"id": "pers_alice", "type": "Person"}}) + "\n"
+                + json.dumps({"op": "create", "entity": {"id": "dev_laptop", "type": "Device"}}) + "\n"
+                + json.dumps({"op": "relate", "relation": {"from": "pers_alice", "to": "dev_laptop"}}) + "\n",
+                encoding="utf-8",
+            )
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+            self.assertNotIn("ONTOLOGY-ISOLATED", codes)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_update_op_does_not_count_as_node(self) -> None:
+        """An `update` op on an already-referenced id is not a fresh node."""
+        ws = Path(tempfile.mkdtemp(prefix="md_test_iso3_"))
+        try:
+            (ws / "memory" / "ontology").mkdir(parents=True)
+            (ws / "memory" / "ontology" / "graph.jsonl").write_text(
+                json.dumps({"op": "create", "entity": {"id": "pers_alice", "type": "Person"}}) + "\n"
+                + json.dumps({"op": "create", "entity": {"id": "dev_laptop", "type": "Device"}}) + "\n"
+                + json.dumps({"op": "relate", "relation": {"from": "pers_alice", "to": "dev_laptop"}}) + "\n"
+                + json.dumps({"op": "update", "id": "pers_alice", "properties": {"name": "Alice"}}) + "\n",
+                encoding="utf-8",
+            )
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+            self.assertNotIn("ONTOLOGY-ISOLATED", codes)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+
+# C11 — DAILY-MEMORY-NAME --------------------------------------------------
+
+class TestDailyMemoryName(unittest.TestCase):
+    def _ws(self, names: list[str]) -> Path:
+        ws = Path(tempfile.mkdtemp(prefix="md_test_daily_"))
+        (ws / "memory").mkdir()
+        for n in names:
+            (ws / "memory" / n).write_text("# x\n", encoding="utf-8")
+        return ws
+
+    def test_valid_names_pass(self) -> None:
+        ws = self._ws(["2026-06-04.md", "2026-06-05.md"])
+        try:
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+            self.assertNotIn("DAILY-MEMORY-NAME", codes)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_bad_format_flagged(self) -> None:
+        ws = self._ws(["2026-6-4.md", "TODAY.md", "2026-13-40.md"])
+        try:
+            r = _run(["--scan", "--json"], ws)
+            findings = [f for f in json.loads(r.stdout)["findings"] if f["code"] == "DAILY-MEMORY-NAME"]
+            self.assertEqual(len(findings), 3)
+            paths = {f["path"] for f in findings}
+            self.assertIn("memory/2026-6-4.md", paths)
+            self.assertIn("memory/TODAY.md", paths)
+            self.assertIn("memory/2026-13-40.md", paths)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+
+    def test_non_md_files_in_memory_ignored(self) -> None:
+        ws = self._ws(["2026-06-04.md", "notes.txt"])
+        try:
+            r = _run(["--scan", "--json"], ws)
+            codes = {f["code"] for f in json.loads(r.stdout)["findings"]}
+            self.assertNotIn("DAILY-MEMORY-NAME", codes)
+        finally:
+            import shutil
+            shutil.rmtree(ws, ignore_errors=True)
+

@@ -8,7 +8,7 @@ No install step.
 ## 1. Get the file
 
 Either clone this repo, or copy `scripts/memory-doctor.py` (one file,
-~750 lines) into your project.
+~1300 lines) into your project.
 
 ```bash
 # Option A: clone
@@ -104,7 +104,7 @@ Use `--ignore-file path/to/other` to point at a different filename
 
 ```bash
 python3 scripts/tests/test_memory_doctor.py
-# Ran 19 tests in 2.0s
+# Ran 53 tests in ~6s
 # OK
 ```
 

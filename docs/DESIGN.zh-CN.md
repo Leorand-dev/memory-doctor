@@ -27,7 +27,7 @@
 
 ```
 scripts/
-├── memory-doctor.py          # 750 行,单文件
+├── memory-doctor.py          # 1300 行,单文件
 └── tests/
     └── test_memory_doctor.py # 19 个隔离单元测试,合计约 2 秒
 ```

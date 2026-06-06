@@ -771,6 +771,228 @@ def _check_ontology_schema(workspace: Path) -> list[Finding]:
 
 
 # --------------------------------------------------------------------------- #
+# Check C8 — EMPTY-HEADER (.learnings/*.md has `## heading` with no body)
+# --------------------------------------------------------------------------- #
+
+def _check_empty_headers(workspace: Path) -> list[Finding]:
+    """Flag `## heading` lines in .learnings/*.md followed by another
+    `## ` (or EOF) with no non-blank content lines in between.
+    These are placeholder sections that should be removed or filled in.
+    """
+    out: list[Finding] = []
+    learnings_dir = workspace / ".learnings"
+    if not learnings_dir.exists():
+        return out
+    header_re = re.compile(r"^#{2,}\s+.+")
+    for p in sorted(learnings_dir.glob("*.md")):
+        try:
+            text = _read_text(p)
+        except OSError:
+            continue
+        for ln, line in _iter_lines(text):
+            if not header_re.match(line.rstrip("\n")):
+                continue
+            # peek ahead for the next non-blank line
+            # text.splitlines() is 0-indexed; `ln` is 1-indexed, so [ln:]
+            # already skips the header line itself.
+            body_lines = text.splitlines()[ln:]
+            has_body = False
+            for nxt in body_lines:
+                if nxt.strip() == "":
+                    continue
+                if header_re.match(nxt.rstrip("\n")):
+                    break
+                has_body = True
+                break
+            if not has_body:
+                out.append(
+                    Finding(
+                        code="EMPTY-HEADER",
+                        severity="low",
+                        path=str(p.relative_to(workspace)),
+                        line=ln,
+                        message=f"Empty section heading: '{line.rstrip().lstrip('#').strip()}'",
+                        suggestion="Either remove the heading or add a body line below it.",
+                        fixable=False,
+                    )
+                )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Check C9 — MEMORY-BUDGET-TIER (graded MEMORY.md size warning)
+# --------------------------------------------------------------------------- #
+#
+# C5 (BUDGET-MEMORY) is a binary threshold. C9 adds a three-tier warning:
+#   info  >= 200 lines  ("approaching budget")
+#   low   >= 300 lines  ("at budget, consider splitting")
+#   medium >= 500 lines ("over budget, split required")
+# Both can fire; C5 still fires once on its own threshold. This is purely
+# additive and never raises severity above the tier.
+
+def _check_memory_budget_tier(
+    workspace: Path,
+    soft: int = 200,
+    hard: int = 300,
+    critical: int = 500,
+) -> list[Finding]:
+    memory = workspace / "MEMORY.md"
+    if not memory.exists():
+        return []
+    lines = memory.read_text(encoding="utf-8", errors="replace").splitlines()
+    n = len(lines)
+    out: list[Finding] = []
+    if n >= critical:
+        out.append(
+            Finding(
+                code="BUDGET-MEMORY-CRIT",
+                severity="medium",
+                path="MEMORY.md",
+                line=None,
+                message=f"MEMORY.md is {n} lines (>= {critical}). Over hard budget.",
+                suggestion="Promote sections into topic files and link them from MEMORY.md.",
+                fixable=False,
+            )
+        )
+    if n >= hard:
+        out.append(
+            Finding(
+                code="BUDGET-MEMORY-HARD",
+                severity="low",
+                path="MEMORY.md",
+                line=None,
+                message=f"MEMORY.md is {n} lines (>= {hard}). At hard budget.",
+                suggestion="Review for staleness; promote daily logs to archive.",
+                fixable=False,
+            )
+        )
+    if n >= soft:
+        out.append(
+            Finding(
+                code="BUDGET-MEMORY-SOFT",
+                severity="info",
+                path="MEMORY.md",
+                line=None,
+                message=f"MEMORY.md is {n} lines (>= {soft}). Approaching budget.",
+                suggestion="Track growth; no action needed yet.",
+                fixable=False,
+            )
+        )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Check C10 — ONTOLOGY-ISOLATED (nodes with no relations at all)
+# --------------------------------------------------------------------------- #
+#
+# C3 catches dangling references (pointing at missing ids). C10 is the dual:
+# nodes that exist but are referenced by NO relation. Complements C3.
+
+def _check_ontology_isolated(workspace: Path) -> list[Finding]:
+    """Flag ontology entity nodes that no relation references.
+
+    The real graph format is line-oriented JSONL with three ops:
+        {"op": "create",  "entity": {"id": "..."}}
+        {"op": "relate",  "from": "..." , "to": "..."}
+        {"op": "update",  "id": "...", "properties": {...}}
+
+    A node is *isolated* if it appears in a `create` op but neither it
+    nor any later `update` of the same id is ever used as `from` / `to`
+    in a `relate` op.
+    """
+    out: list[Finding] = []
+    graph = workspace / ONTOLOGY_GRAPH
+    if not graph.exists():
+        return out
+    nodes: set[str] = set()
+    referenced: set[str] = set()
+    rel_re = re.compile(r'"op"\s*:\s*"relate"')
+    ent_re = re.compile(r'"op"\s*:\s*"create".*?"id"\s*:\s*"([^"]+)"')
+    src_re = re.compile(r'"from"\s*:\s*"([^"]+)"')
+    dst_re = re.compile(r'"to"\s*:\s*"([^"]+)"')
+    try:
+        with graph.open(encoding="utf-8", errors="replace") as fh:
+            for ln, raw in enumerate(fh, 1):
+                if not raw.strip():
+                    continue
+                if rel_re.search(raw):
+                    for m in src_re.finditer(raw):
+                        referenced.add(m.group(1))
+                    for m in dst_re.finditer(raw):
+                        referenced.add(m.group(1))
+                else:
+                    # extract every id inside the create payload (top-level
+                    # and inside `entity` / `properties`). Be permissive —
+                    # the only thing we care about is *which* ids exist.
+                    for m in re.finditer(r'"id"\s*:\s*"([^"]+)"', raw):
+                        nodes.add(m.group(1))
+    except OSError:
+        return out
+    for nid in sorted(nodes - referenced):
+        out.append(
+            Finding(
+                code="ONTOLOGY-ISOLATED",
+                severity="low",
+                path=ONTOLOGY_GRAPH,
+                line=None,
+                message=f"Ontology node '{nid}' has no relations.",
+                suggestion="Either add a relation, or remove the node if it's no longer relevant.",
+                fixable=False,
+            )
+        )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Check C11 — DAILY-MEMORY-NAME (memory/YYYY-MM-DD.md filename format)
+# --------------------------------------------------------------------------- #
+#
+# Daily files must be named `memory/YYYY-MM-DD.md`. A typo means `grep memory/`
+# won't find them and they silently fall out of the long-term memory loop.
+
+DAILY_NAME_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\.md$")
+
+
+def _check_daily_memory_names(workspace: Path) -> list[Finding]:
+    out: list[Finding] = []
+    mem_dir = workspace / "memory"
+    if not mem_dir.exists():
+        return out
+    for p in sorted(mem_dir.iterdir()):
+        if not p.is_file() or p.suffix != ".md":
+            continue
+        name = p.name
+        m = DAILY_NAME_RE.match(name)
+        if not m:
+            out.append(
+                Finding(
+                    code="DAILY-MEMORY-NAME",
+                    severity="low",
+                    path=str(p.relative_to(workspace)),
+                    line=None,
+                    message=f"Daily memory filename '{name}' does not match YYYY-MM-DD.md.",
+                    suggestion="Rename to a valid date format or move it out of memory/.",
+                    fixable=False,
+                )
+            )
+            continue
+        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if not (1970 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31):
+            out.append(
+                Finding(
+                    code="DAILY-MEMORY-NAME",
+                    severity="low",
+                    path=str(p.relative_to(workspace)),
+                    line=None,
+                    message=f"Daily memory filename '{name}' has an out-of-range date.",
+                    suggestion="Rename to a valid YYYY-MM-DD.md.",
+                    fixable=False,
+                )
+            )
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Fixers (only ever run if user passes --fix AND the finding is marked fixable)
 # --------------------------------------------------------------------------- #
 
@@ -892,6 +1114,14 @@ def run_doctor(
     for f in ontology_findings:
         report.add(f)
     for f in _check_ontology_schema(workspace):
+        report.add(f)
+    for f in _check_empty_headers(workspace):
+        report.add(f)
+    for f in _check_memory_budget_tier(workspace):
+        report.add(f)
+    for f in _check_ontology_isolated(workspace):
+        report.add(f)
+    for f in _check_daily_memory_names(workspace):
         report.add(f)
 
     # Apply .memory-doctorignore rules: set `suppressed` on each finding that

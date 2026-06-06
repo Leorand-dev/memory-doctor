@@ -6,7 +6,7 @@ Agent 长期记忆系统的健康检查。仅依赖标准库,无需安装。
 
 ## 1. 获取文件
 
-克隆本仓库,或将 `scripts/memory-doctor.py`(单个文件,约 750 行)复制到你的项目中。
+克隆本仓库,或将 `scripts/memory-doctor.py`(单个文件,约 1300 行)复制到你的项目中。
 
 ```bash
 # 选项 A:克隆仓库
@@ -95,7 +95,7 @@ code:DUPLICATE-KEY path:MEMORY.md:9
 
 ```bash
 python3 scripts/tests/test_memory_doctor.py
-# Ran 19 tests in 2.0s
+# Ran 53 tests in ~6s
 # OK
 ```
 

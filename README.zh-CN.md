@@ -5,7 +5,7 @@
 AI 智能体长期记忆系统的健康检查工具。
 
 - **仅使用标准库。** 无需安装，无依赖，不联网。
-- **单文件。** `scripts/memory-doctor.py`，约 750 行。
+- **单文件。** `scripts/memory-doctor.py`，约 1300 行。
 - **默认安全。** 只读模式；`--fix` 只作用于明确选择参与的检查项。
 - **CI 友好。** 退出码区分“存在问题”（1）和“密钥泄露”（2）。
 
@@ -25,11 +25,15 @@ $ python3 scripts/memory-doctor.py --scan --quiet
 | `SECRET-LEAK` | 🔴 critical | 把 GitHub PAT 粘贴进了日记 |
 | `DUPLICATE-KEY` | 🟡 medium | `**Timezone:**` 在两个章节中以不同值重复定义 |
 | `DANGLING-REF` | 🟡 medium | 本体关系指向了已删除的实体 id |
-| `STALE-ITEM` | 🔵 low | LRN/ERR 条目超过 90 天未出现 |
 | `BUDGET-MEMORY` | 🔵 low | `MEMORY.md` 超过 300 行 |
 | `BUDGET-SECTION` | 🔵 low | 单个章节超过 50 行 |
+| `STALE-ITEM` | 🔵 low | LRN/ERR 条目超过 90 天未出现 |
 | `FILE-MISSING` | ⚪ info | 缺失核心引导文件 |
 | `ONTOLOGY-STRUCT` | 🟡/⚪ | `graph.jsonl` 格式错误或缺少 schema |
+| `EMPTY-HEADER` | 🔵 low | `.learnings/*.md` 中 `## 标题` 下无正文 |
+| `BUDGET-MEMORY-SOFT` / `HARD` / `CRIT` | ⚪/🔵/🟡 | 200 / 300 / 500 行三档分级提醒 |
+| `ONTOLOGY-ISOLATED` | 🔵 low | 本体节点没有任何关系 |
+| `DAILY-MEMORY-NAME` | 🔵 low | `memory/*.md` 文件名不符合 `YYYY-MM-DD.md` 格式 |
 
 每项检查的完整语义见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 
@@ -48,15 +52,13 @@ python3 scripts/memory-doctor.py --scan
 
 # 3. （可选）pre-commit 钩子
 git config core.hooksPath scripts/hooks
-```
+```完整说明见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)。
 
-完整说明见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)。
-
-## Tests
+## 测试
 
 ```bash
-python3 scripts/tests/test_memory_doctor.py
-# Ran 19 tests in 2.0s
+python3 -m unittest scripts.tests.test_memory_doctor
+# Ran 53 tests in ~6s
 # OK
 ```
 
